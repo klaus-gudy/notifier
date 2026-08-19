@@ -33,6 +33,9 @@ import { SmsModule } from './modules/sms/sms.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(HttpLoggerMiddleware).forRoutes('*');
+    // Middleware mounts by prefix, so '/' covers the global prefix root and
+    // everything beneath it in a single registration. The old '*' wildcard is
+    // deprecated under Express 5's path-to-regexp and only survives via a shim.
+    consumer.apply(HttpLoggerMiddleware).forRoutes('/');
   }
 }
