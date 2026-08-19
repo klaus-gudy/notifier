@@ -1,9 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  Between,
+  FindOptionsWhere,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import { Notification } from './notification.entity';
 import { NotificationChannel } from './enums/notification-channel.enum';
 import { NotificationStatus } from './enums/notification-status.enum';
+import { QueryNotificationsDto } from './dto/query-notifications.dto';
 
 export interface CreateNotificationInput {
   serviceName: string;
@@ -41,6 +48,76 @@ export class NotificationsService {
         retryCount: 0,
       }),
     );
+  }
+
+  /** Paginated audit search, newest first. */
+  async findAll(query: QueryNotificationsDto): Promise<{
+    items: Notification[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    const [items, total] = await this.notifications.findAndCount({
+      where: this.buildWhere(query),
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+      // The jsonb payloads are only served from the detail endpoint.
+      select: {
+        id: true,
+        serviceName: true,
+        channel: true,
+        recipient: true,
+        message: true,
+        status: true,
+        providerMessageId: true,
+        retryCount: true,
+        errorMessage: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return { items, total, page, limit };
+  }
+
+  async findOne(id: string): Promise<Notification> {
+    const notification = await this.notifications.findOneBy({ id });
+
+    if (!notification) {
+      throw new NotFoundException(`Notification ${id} not found`);
+    }
+
+    return notification;
+  }
+
+  private buildWhere(
+    query: QueryNotificationsDto,
+  ): FindOptionsWhere<Notification> {
+    const where: FindOptionsWhere<Notification> = {};
+
+    if (query.service_name) {
+      where.serviceName = query.service_name;
+    }
+    if (query.status) {
+      where.status = query.status;
+    }
+    if (query.recipient) {
+      where.recipient = query.recipient;
+    }
+
+    if (query.from && query.to) {
+      where.createdAt = Between(new Date(query.from), new Date(query.to));
+    } else if (query.from) {
+      where.createdAt = MoreThanOrEqual(new Date(query.from));
+    } else if (query.to) {
+      where.createdAt = LessThanOrEqual(new Date(query.to));
+    }
+
+    return where;
   }
 
   async recordAttempt(

@@ -1,9 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
-
-const stripFormatting = (value: unknown): unknown =>
-  typeof value === 'string' ? value.replace(/[\s()+-]/g, '') : value;
+import { stripPhoneFormatting } from '../../../common/utils/phone';
 
 /**
  * Wire contract for calling services. Field names stay snake_case so the
@@ -11,7 +9,7 @@ const stripFormatting = (value: unknown): unknown =>
  */
 export class SendSmsDto {
   @ApiProperty({ example: '255623470540' })
-  @Transform(({ value }) => stripFormatting(value))
+  @Transform(({ value }) => stripPhoneFormatting(value))
   @IsString()
   @IsNotEmpty()
   @Matches(/^\d{9,15}$/, {
