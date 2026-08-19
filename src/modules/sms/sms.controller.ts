@@ -20,7 +20,7 @@ export class SmsController {
         notification_id: '5e8154bf-80ed-45d9-b4b1-80fb57237c7b',
         service_name: 'Jarvis',
         channel: 'SMS',
-        recipient: '255689737459',
+        recipient: '255623470540',
         status: 'PROCESSING',
         provider_message_id: '156023',
         retry_count: 0,

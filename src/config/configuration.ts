@@ -1,5 +1,6 @@
 export interface AppConfig {
   port: number;
+  logRequestBody: boolean;
   database: {
     host: string;
     port: number;
@@ -20,6 +21,8 @@ const DEFAULT_NOTIFY_BASE_URL = 'https://api.notify.africa/api/v1';
 
 export default (): AppConfig => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
+  // Off by default: request bodies carry phone numbers and message text.
+  logRequestBody: process.env.LOG_REQUEST_BODY === 'true',
   database: {
     host: process.env.DATABASE_HOST ?? 'localhost',
     port: parseInt(process.env.DATABASE_PORT ?? '5432', 10),

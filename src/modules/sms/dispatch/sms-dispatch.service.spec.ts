@@ -50,9 +50,9 @@ describe('SmsDispatchService', () => {
 
   it('prepares only the payload the provider expects', () => {
     expect(
-      service.buildPayload({ recipient: '255689737459', message: 'Hello' }),
+      service.buildPayload({ recipient: '255623470540', message: 'Hello' }),
     ).toEqual({
-      phone_number: '255689737459',
+      phone_number: '255623470540',
       message: 'Hello',
       sender_id: '137',
     });
@@ -69,7 +69,7 @@ describe('SmsDispatchService', () => {
     );
 
     const result = await service.dispatch({
-      recipient: '255689737459',
+      recipient: '255623470540',
       message: 'Hello from API Management endpoint!',
     });
 
@@ -81,7 +81,7 @@ describe('SmsDispatchService', () => {
 
     expect(url).toBe('https://api.notify.africa/api/v1/api/messages/send');
     expect(body).toEqual({
-      phone_number: '255689737459',
+      phone_number: '255623470540',
       message: 'Hello from API Management endpoint!',
       sender_id: '137',
     });
@@ -97,7 +97,7 @@ describe('SmsDispatchService', () => {
     );
 
     const result = await service.dispatch({
-      recipient: '255689737459',
+      recipient: '255623470540',
       message: 'Hi',
     });
 
@@ -111,14 +111,14 @@ describe('SmsDispatchService', () => {
       throwError(() => axiosFailure(503, { message: 'Unavailable' })),
     );
     await expect(
-      service.dispatch({ recipient: '255689737459', message: 'Hi' }),
+      service.dispatch({ recipient: '255623470540', message: 'Hi' }),
     ).resolves.toMatchObject({ success: false, retryable: true });
 
     post.mockReturnValueOnce(
       throwError(() => axiosFailure(401, { message: 'Unauthorized' })),
     );
     await expect(
-      service.dispatch({ recipient: '255689737459', message: 'Hi' }),
+      service.dispatch({ recipient: '255623470540', message: 'Hi' }),
     ).resolves.toMatchObject({ success: false, retryable: false });
   });
 
@@ -131,7 +131,7 @@ describe('SmsDispatchService', () => {
     );
 
     const result = await withoutKey.dispatch({
-      recipient: '255689737459',
+      recipient: '255623470540',
       message: 'Hi',
     });
 

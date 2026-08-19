@@ -10,13 +10,13 @@ const stripFormatting = (value: unknown): unknown =>
  * payload can be forwarded as-is by upstream systems.
  */
 export class SendSmsDto {
-  @ApiProperty({ example: '255689737459' })
+  @ApiProperty({ example: '255623470540' })
   @Transform(({ value }) => stripFormatting(value))
   @IsString()
   @IsNotEmpty()
   @Matches(/^\d{9,15}$/, {
     message:
-      'phone_number must be 9-15 digits in international format, e.g. 255689737459',
+      'phone_number must be 9-15 digits in international format, e.g. 255623470540',
   })
   phone_number: string;
 

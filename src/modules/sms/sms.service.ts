@@ -13,6 +13,12 @@ const RETRY_BACKOFF_MS = 500;
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Keeps recipients out of the terminal in full, e.g. 255******459. */
+const maskRecipient = (recipient: string): string =>
+  recipient.length <= 6
+    ? recipient
+    : `${recipient.slice(0, 3)}${'*'.repeat(recipient.length - 6)}${recipient.slice(-3)}`;
+
 /**
  * Orchestrates a send: audit first, dispatch second, record the outcome last.
  * The audit row exists before the provider is contacted so nothing is lost if
@@ -35,6 +41,10 @@ export class SmsService {
       recipient: dto.phone_number,
       message: dto.message,
     });
+
+    this.logger.log(
+      `Queued ${notification.id} (${dto.service_name} -> ${maskRecipient(notification.recipient)})`,
+    );
 
     const maxAttempts = Math.max(
       1,
@@ -70,6 +80,19 @@ export class SmsService {
       retryCount: attempt - 1,
       errorMessage: result.errorMessage,
     });
+
+    const target = `${dto.service_name} -> ${maskRecipient(recorded.recipient)}`;
+
+    if (result.success) {
+      this.logger.log(
+        `Sent ${recorded.id} (${target}) status=${recorded.status} ` +
+          `providerMessageId=${recorded.providerMessageId ?? 'n/a'} retries=${recorded.retryCount}`,
+      );
+    } else {
+      this.logger.error(
+        `Failed ${recorded.id} (${target}) after ${attempt} attempt(s): ${recorded.errorMessage}`,
+      );
+    }
 
     if (!result.success) {
       throw new BadGatewayException({

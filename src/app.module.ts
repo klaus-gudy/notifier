@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { HttpLoggerMiddleware } from './common/middleware/http-logger.middleware';
 import configuration, { AppConfig } from './config/configuration';
 import { buildDataSourceOptions } from './database/typeorm.config';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -28,4 +29,8 @@ import { SmsModule } from './modules/sms/sms.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(HttpLoggerMiddleware).forRoutes('*');
+  }
+}
