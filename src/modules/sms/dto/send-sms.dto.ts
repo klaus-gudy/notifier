@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
 
@@ -9,6 +10,7 @@ const stripFormatting = (value: unknown): unknown =>
  * payload can be forwarded as-is by upstream systems.
  */
 export class SendSmsDto {
+  @ApiProperty({ example: '255689737459' })
   @Transform(({ value }) => stripFormatting(value))
   @IsString()
   @IsNotEmpty()
@@ -18,11 +20,13 @@ export class SendSmsDto {
   })
   phone_number: string;
 
+  @ApiProperty({ example: 'Hello from API Management endpoint!' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(1600)
   message: string;
 
+  @ApiProperty({ example: 'Jarvis' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
