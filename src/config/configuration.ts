@@ -14,6 +14,12 @@ export interface AppConfig {
     senderId: string;
     timeoutMs: number;
     maxAttempts: number;
+    poll: {
+      enabled: boolean;
+      cron: string;
+      batchSize: number;
+      maxAgeHours: number;
+    };
   };
 }
 
@@ -37,5 +43,12 @@ export default (): AppConfig => ({
     senderId: process.env.NOTIFY_SENDER_ID ?? '',
     timeoutMs: parseInt(process.env.NOTIFY_TIMEOUT_MS ?? '15000', 10),
     maxAttempts: parseInt(process.env.NOTIFY_MAX_ATTEMPTS ?? '3', 10),
+    poll: {
+      enabled: process.env.NOTIFY_POLL_ENABLED !== 'false',
+      cron: process.env.NOTIFY_POLL_CRON ?? '*/1 * * * *',
+      batchSize: parseInt(process.env.NOTIFY_POLL_BATCH_SIZE ?? '50', 10),
+      // Stop chasing messages the provider never resolves.
+      maxAgeHours: parseInt(process.env.NOTIFY_POLL_MAX_AGE_HOURS ?? '24', 10),
+    },
   },
 });

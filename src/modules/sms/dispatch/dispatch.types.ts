@@ -22,3 +22,13 @@ export interface SmsDispatchResult {
   /** Whether another attempt could plausibly succeed. */
   retryable: boolean;
 }
+
+/** Outcome of a delivery-status lookup for one already-dispatched message. */
+export interface SmsStatusResult {
+  success: boolean;
+  /** Raw provider status string, e.g. "DELIVERED". */
+  providerStatus: string | null;
+  deliveredAt: Date | null;
+  responsePayload: Record<string, unknown> | null;
+  errorMessage: string | null;
+}

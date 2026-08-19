@@ -30,14 +30,16 @@ const axiosFailure = (status: number, data: unknown): AxiosError =>
 describe('SmsDispatchService', () => {
   let service: SmsDispatchService;
   let post: jest.Mock;
+  let get: jest.Mock;
 
   beforeEach(async () => {
     post = jest.fn();
+    get = jest.fn();
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         SmsDispatchService,
-        { provide: HttpService, useValue: { post } },
+        { provide: HttpService, useValue: { post, get } },
         {
           provide: ConfigService,
           useValue: { get: (key: string) => config[key] },
@@ -124,7 +126,7 @@ describe('SmsDispatchService', () => {
 
   it('fails fast when provider credentials are missing', async () => {
     const withoutKey = new SmsDispatchService(
-      { post } as unknown as HttpService,
+      { post, get } as unknown as HttpService,
       {
         get: (key: string) => (key === 'notify.apiKey' ? '' : config[key]),
       } as ConfigService,
@@ -140,6 +142,53 @@ describe('SmsDispatchService', () => {
       success: false,
       retryable: false,
       errorMessage: 'NOTIFY_API_KEY is not configured',
+    });
+  });
+
+  describe('checkStatus', () => {
+    it('reads the delivery status from a real provider response', async () => {
+      get.mockReturnValue(
+        of(
+          axiosResponse({
+            status: 200,
+            message: 'Message status retrieved successfully',
+            data: {
+              messageId: '292259',
+              status: 'DELIVERED',
+              sentAt: null,
+              deliveredAt: '2026-08-19T06:50:06.494Z',
+            },
+          }),
+        ),
+      );
+
+      const result = await service.checkStatus('292259');
+
+      expect(get).toHaveBeenCalledWith(
+        'https://api.notify.africa/api/v1/api/messages/status/292259',
+        expect.objectContaining({
+          headers: { Authorization: 'Bearer test-token' },
+        }) as unknown,
+      );
+      expect(result.success).toBe(true);
+      expect(result.providerStatus).toBe('DELIVERED');
+      expect(result.deliveredAt?.toISOString()).toBe(
+        '2026-08-19T06:50:06.494Z',
+      );
+    });
+
+    it('reports a lookup failure without guessing at the message state', async () => {
+      get.mockReturnValue(
+        throwError(() => axiosFailure(404, { message: 'Not found' })),
+      );
+
+      const result = await service.checkStatus('999999');
+
+      expect(result).toMatchObject({
+        success: false,
+        providerStatus: null,
+        errorMessage: 'Not found',
+      });
     });
   });
 });

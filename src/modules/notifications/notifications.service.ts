@@ -3,14 +3,18 @@ import { InjectRepository } from '@nestjs/typeorm';
 import {
   Between,
   FindOptionsWhere,
+  In,
   LessThanOrEqual,
   MoreThanOrEqual,
+  Not,
+  IsNull,
   Repository,
 } from 'typeorm';
 import { Notification } from './notification.entity';
 import { NotificationChannel } from './enums/notification-channel.enum';
 import { NotificationStatus } from './enums/notification-status.enum';
 import { QueryNotificationsDto } from './dto/query-notifications.dto';
+import { POLLABLE_STATUSES } from './notification-status.map';
 
 export interface CreateNotificationInput {
   serviceName: string;
@@ -118,6 +122,45 @@ export class NotificationsService {
     }
 
     return where;
+  }
+
+  /**
+   * Dispatched messages still awaiting a final delivery outcome. Oldest first
+   * so nothing starves, and bounded by age so a message the provider never
+   * resolves is eventually left alone instead of polled forever.
+   */
+  findAwaitingDeliveryStatus(
+    limit: number,
+    maxAgeHours: number,
+  ): Promise<Notification[]> {
+    const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+
+    return this.notifications.find({
+      where: {
+        status: In(POLLABLE_STATUSES),
+        providerMessageId: Not(IsNull()),
+        createdAt: MoreThanOrEqual(cutoff),
+      },
+      order: { createdAt: 'ASC' },
+      take: limit,
+    });
+  }
+
+  /** Applies a delivery outcome from the poller. Provider payloads are left
+   *  untouched so the original dispatch record stays intact. */
+  async applyDeliveryStatus(
+    id: string,
+    status: NotificationStatus,
+    errorMessage?: string | null,
+  ): Promise<Notification> {
+    const notification = await this.notifications.findOneByOrFail({ id });
+
+    notification.status = status;
+    if (errorMessage !== undefined) {
+      notification.errorMessage = errorMessage;
+    }
+
+    return this.notifications.save(notification);
   }
 
   async recordAttempt(

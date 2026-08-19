@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -23,6 +24,7 @@ import { SmsModule } from './modules/sms/sms.module';
           config.getOrThrow<AppConfig['database']>('database'),
         ),
     }),
+    ScheduleModule.forRoot(),
     NotificationsModule,
     SmsModule,
   ],

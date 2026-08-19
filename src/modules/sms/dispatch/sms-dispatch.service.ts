@@ -7,9 +7,11 @@ import {
   SmsDispatchRequest,
   SmsDispatchResult,
   SmsProviderPayload,
+  SmsStatusResult,
 } from './dispatch.types';
 
 const SEND_PATH = '/api/messages/send';
+const STATUS_PATH = '/api/messages/status';
 
 /**
  * The only place that knows how the downstream SMS provider is shaped: it
@@ -26,6 +28,13 @@ export class SmsDispatchService {
     private readonly config: ConfigService,
   ) {}
 
+  private baseUrl(): string {
+    return (this.config.get<string>('notify.baseUrl') ?? '').replace(
+      /\/+$/,
+      '',
+    );
+  }
+
   /** Builds the provider payload. Kept public so it can be asserted in tests. */
   buildPayload(request: SmsDispatchRequest): SmsProviderPayload {
     return {
@@ -37,9 +46,8 @@ export class SmsDispatchService {
 
   async dispatch(request: SmsDispatchRequest): Promise<SmsDispatchResult> {
     const payload = this.buildPayload(request);
-    const baseUrl = this.config.get<string>('notify.baseUrl') ?? '';
     const apiKey = this.config.get<string>('notify.apiKey') ?? '';
-    const url = `${baseUrl.replace(/\/+$/, '')}${SEND_PATH}`;
+    const url = `${this.baseUrl()}${SEND_PATH}`;
 
     if (!apiKey) {
       return this.failure(payload, 'NOTIFY_API_KEY is not configured', false);
@@ -62,6 +70,79 @@ export class SmsDispatchService {
       return this.interpret(payload, response);
     } catch (error) {
       return this.interpretError(payload, error);
+    }
+  }
+
+  /**
+   * Asks the provider where a previously-accepted message got to. Read-only:
+   * it never resends, so it is safe to call repeatedly.
+   */
+  async checkStatus(providerMessageId: string): Promise<SmsStatusResult> {
+    const apiKey = this.config.get<string>('notify.apiKey') ?? '';
+
+    if (!apiKey) {
+      return {
+        success: false,
+        providerStatus: null,
+        deliveredAt: null,
+        responsePayload: null,
+        errorMessage: 'NOTIFY_API_KEY is not configured',
+      };
+    }
+
+    const url = `${this.baseUrl()}${STATUS_PATH}/${encodeURIComponent(providerMessageId)}`;
+
+    try {
+      const response = await firstValueFrom(
+        this.http.get<Record<string, unknown>>(url, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          timeout: this.config.get<number>('notify.timeoutMs'),
+        }),
+      );
+
+      const body = response.data ?? {};
+      const data = (body.data ?? {}) as Record<string, unknown>;
+      const bodyStatus =
+        typeof body.status === 'number' ? body.status : response.status;
+
+      if (bodyStatus >= 400) {
+        return {
+          success: false,
+          providerStatus: null,
+          deliveredAt: null,
+          responsePayload: body,
+          errorMessage:
+            typeof body.message === 'string'
+              ? body.message
+              : `Provider returned status ${bodyStatus}`,
+        };
+      }
+
+      return {
+        success: true,
+        providerStatus:
+          typeof data.status === 'string' ? data.status.toUpperCase() : null,
+        deliveredAt:
+          typeof data.deliveredAt === 'string'
+            ? new Date(data.deliveredAt)
+            : null,
+        responsePayload: body,
+        errorMessage: null,
+      };
+    } catch (error) {
+      const axiosError = error as AxiosError<Record<string, unknown>>;
+      const body = axiosError?.response?.data ?? null;
+
+      return {
+        success: false,
+        providerStatus: null,
+        deliveredAt: null,
+        responsePayload: body,
+        errorMessage:
+          typeof body?.message === 'string'
+            ? body.message
+            : (axiosError?.message ?? 'Unknown transport error'),
+      };
     }
   }
 
