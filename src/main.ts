@@ -26,6 +26,10 @@ async function bootstrap() {
     SwaggerModule.createDocument(app, swaggerConfig),
   );
 
+  // Lets the queue consumer stop cleanly on SIGTERM/SIGINT instead of
+  // dropping its connection mid-message.
+  app.enableShutdownHooks();
+
   const port = app.get(ConfigService).get<number>('port') ?? 3000;
   await app.listen(port);
   Logger.log(

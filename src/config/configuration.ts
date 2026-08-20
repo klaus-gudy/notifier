@@ -28,6 +28,12 @@ export interface AppConfig {
     senderEmail: string;
     senderName: string;
   };
+  rabbitmq: {
+    enabled: boolean;
+    url: string;
+    emailQueue: string;
+    prefetch: number;
+  };
 }
 
 const DEFAULT_NOTIFY_BASE_URL = 'https://api.notify.africa/api/v1';
@@ -63,5 +69,13 @@ export default (): AppConfig => ({
     apiKey: process.env.RESEND_API_KEY ?? '',
     senderEmail: process.env.RESEND_SENDER_EMAIL ?? '',
     senderName: process.env.RESEND_SENDER_NAME ?? '',
+  },
+  rabbitmq: {
+    enabled: process.env.RABBITMQ_ENABLED !== 'false',
+    url: process.env.RABBITMQ_URL ?? 'amqp://guest:guest@localhost:5672',
+    // Producer-owned queue, dead-lettered to jarvis.emails.dlx.
+    emailQueue: process.env.RABBITMQ_EMAIL_QUEUE ?? 'emails.outbound',
+    // Caps how many messages are in flight before acks catch up.
+    prefetch: parseInt(process.env.RABBITMQ_PREFETCH ?? '10', 10),
   },
 });
