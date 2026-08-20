@@ -27,8 +27,9 @@ export class Notification {
   })
   channel: NotificationChannel;
 
+  /** Phone number for SMS, email address for EMAIL. Sized for the latter. */
   @Index()
-  @Column({ name: 'recipient', type: 'varchar', length: 32 })
+  @Column({ name: 'recipient', type: 'varchar', length: 320 })
   recipient: string;
 
   @Column({ name: 'message', type: 'text' })

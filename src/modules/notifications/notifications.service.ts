@@ -128,8 +128,12 @@ export class NotificationsService {
    * Dispatched messages still awaiting a final delivery outcome. Oldest first
    * so nothing starves, and bounded by age so a message the provider never
    * resolves is eventually left alone instead of polled forever.
+   *
+   * Scoped by channel: provider message ids are only meaningful to the
+   * provider that issued them, so an SMS poll must not pick up email rows.
    */
   findAwaitingDeliveryStatus(
+    channel: NotificationChannel,
     limit: number,
     maxAgeHours: number,
   ): Promise<Notification[]> {
@@ -137,6 +141,7 @@ export class NotificationsService {
 
     return this.notifications.find({
       where: {
+        channel,
         status: In(POLLABLE_STATUSES),
         providerMessageId: Not(IsNull()),
         createdAt: MoreThanOrEqual(cutoff),

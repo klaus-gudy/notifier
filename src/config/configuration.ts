@@ -24,6 +24,7 @@ export interface AppConfig {
   resend: {
     apiKey: string;
     senderEmail: string;
+    senderName: string;
   };
 }
 
@@ -58,5 +59,6 @@ export default (): AppConfig => ({
   resend: {
     apiKey: process.env.RESEND_API_KEY ?? '',
     senderEmail: process.env.RESEND_SENDER_EMAIL ?? '',
+    senderName: process.env.RESEND_SENDER_NAME ?? '',
   },
 });

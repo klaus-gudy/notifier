@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
+import { NotificationChannel } from '../notifications/enums/notification-channel.enum';
 import { NotificationStatus } from '../notifications/enums/notification-status.enum';
 import { mapProviderStatus } from '../notifications/notification-status.map';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -56,6 +57,7 @@ export class SmsStatusPollerService implements OnModuleInit {
       const maxAgeHours =
         this.config.get<number>('notify.poll.maxAgeHours') ?? 24;
       const pending = await this.notifications.findAwaitingDeliveryStatus(
+        NotificationChannel.SMS,
         batchSize,
         maxAgeHours,
       );
