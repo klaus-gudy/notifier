@@ -2,6 +2,8 @@ export interface AppConfig {
   port: number;
   logRequestBody: boolean;
   database: {
+    /** Full connection string. Takes precedence over the discrete fields. */
+    url: string;
     host: string;
     port: number;
     username: string;
@@ -35,6 +37,7 @@ export default (): AppConfig => ({
   // Off by default: request bodies carry phone numbers and message text.
   logRequestBody: process.env.LOG_REQUEST_BODY === 'true',
   database: {
+    url: process.env.DATABASE_URL ?? '',
     host: process.env.DATABASE_HOST ?? 'localhost',
     port: parseInt(process.env.DATABASE_PORT ?? '5432', 10),
     username: process.env.DATABASE_USER ?? '',
