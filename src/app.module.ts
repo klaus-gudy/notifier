@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { HttpLoggerMiddleware } from './common/middleware/http-logger.middleware';
 import configuration, { AppConfig } from './config/configuration';
 import { buildDataSourceOptions } from './database/typeorm.config';
+import { EmailModule } from './modules/email/email.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SmsModule } from './modules/sms/sms.module';
 
@@ -27,6 +28,7 @@ import { SmsModule } from './modules/sms/sms.module';
     ScheduleModule.forRoot(),
     NotificationsModule,
     SmsModule,
+    EmailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

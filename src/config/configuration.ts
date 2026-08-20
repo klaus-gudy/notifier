@@ -21,6 +21,10 @@ export interface AppConfig {
       maxAgeHours: number;
     };
   };
+  resend: {
+    apiKey: string;
+    senderEmail: string;
+  };
 }
 
 const DEFAULT_NOTIFY_BASE_URL = 'https://api.notify.africa/api/v1';
@@ -50,5 +54,9 @@ export default (): AppConfig => ({
       // Stop chasing messages the provider never resolves.
       maxAgeHours: parseInt(process.env.NOTIFY_POLL_MAX_AGE_HOURS ?? '24', 10),
     },
+  },
+  resend: {
+    apiKey: process.env.RESEND_API_KEY ?? '',
+    senderEmail: process.env.RESEND_SENDER_EMAIL ?? '',
   },
 });
