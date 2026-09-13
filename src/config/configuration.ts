@@ -32,7 +32,6 @@ export interface AppConfig {
     enabled: boolean;
     url: string;
     emailQueue: string;
-    emailRoutingKey: string;
     prefetch: number;
   };
 }
@@ -89,14 +88,6 @@ export default (): AppConfig => ({
      * against one that does not exist.
      */
     emailQueue: process.env.RABBITMQ_EMAIL_QUEUE ?? 'NOTIFIER_EMAIL_QUEUE',
-    /*
-     * Display only: Jarvis owns the binding, so this service never sees the
-     * key until a message arrives carrying it. It exists so the startup log
-     * can name what the queue is fed by; setting it wrong changes the log
-     * line and nothing else.
-     */
-    emailRoutingKey:
-      process.env.RABBITMQ_EMAIL_ROUTING_KEY ?? 'emails.outbound',
     // Caps how many messages are in flight before acks catch up.
     prefetch: parseInt(process.env.RABBITMQ_PREFETCH ?? '10', 10),
   },
