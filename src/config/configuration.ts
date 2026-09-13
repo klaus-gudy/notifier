@@ -73,8 +73,21 @@ export default (): AppConfig => ({
   rabbitmq: {
     enabled: process.env.RABBITMQ_ENABLED !== 'false',
     url: process.env.RABBITMQ_URL ?? 'amqp://guest:guest@localhost:5672',
-    // Producer-owned queue, dead-lettered to jarvis.emails.dlx.
-    emailQueue: process.env.RABBITMQ_EMAIL_QUEUE ?? 'emails.outbound',
+    /*
+     * Producer-owned queue, dead-lettered to jarvis.emails.dlx. Jarvis asserts
+     * and binds it; this service only checks it exists and consumes.
+     *
+     * Named for who consumes it, in caps, matching DOCUMENT_WORKER_QUEUE on the
+     * events side — a queue is *who reads*, a routing key is *what happened*,
+     * and the old `emails.outbound` was the same lowercase-dotted shape as a
+     * key. The `_EMAIL_` qualifier leaves room for this service's SMS side to
+     * have a queue of its own.
+     *
+     * It must match Jarvis's MAIL_QUEUE exactly: this service does not declare
+     * the queue, so a mismatch is not a new queue, it is `checkQueue` failing
+     * against one that does not exist.
+     */
+    emailQueue: process.env.RABBITMQ_EMAIL_QUEUE ?? 'NOTIFIER_EMAIL_QUEUE',
     // Caps how many messages are in flight before acks catch up.
     prefetch: parseInt(process.env.RABBITMQ_PREFETCH ?? '10', 10),
   },
