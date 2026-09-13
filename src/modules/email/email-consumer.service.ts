@@ -43,7 +43,7 @@ export class EmailConsumerService
   ) {}
 
   onModuleInit(): void {
-    const { enabled, url, emailQueue, prefetch } =
+    const { enabled, url, emailQueue, emailRoutingKey, prefetch } =
       this.config.getOrThrow<AppConfig['rabbitmq']>('rabbitmq');
 
     if (!enabled) {
@@ -53,7 +53,9 @@ export class EmailConsumerService
 
     this.connection = connect([url]);
     this.connection.on('connect', () =>
-      this.logger.log(`Connected to RabbitMQ, consuming "${emailQueue}"`),
+      this.logger.log(
+        `Connected to RabbitMQ, listening for "${emailRoutingKey}" on "${emailQueue}"`,
+      ),
     );
     this.connection.on('disconnect', ({ err }) =>
       this.logger.warn(`RabbitMQ disconnected: ${err?.message ?? 'unknown'}`),
