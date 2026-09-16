@@ -32,6 +32,7 @@ export interface AppConfig {
     enabled: boolean;
     url: string;
     emailQueue: string;
+    smsQueue: string;
     prefetch: number;
   };
 }
@@ -80,14 +81,20 @@ export default (): AppConfig => ({
      * Named for who consumes it, in caps, matching DOCUMENT_WORKER_QUEUE on the
      * events side — a queue is *who reads*, a routing key is *what happened*,
      * and the old `emails.outbound` was the same lowercase-dotted shape as a
-     * key. The `_EMAIL_` qualifier leaves room for this service's SMS side to
-     * have a queue of its own.
+     * key. The `_EMAIL_` qualifier is what gives the SMS side a queue of its
+     * own, declared just below.
      *
      * It must match Jarvis's MAIL_QUEUE exactly: this service does not declare
      * the queue, so a mismatch is not a new queue, it is `checkQueue` failing
      * against one that does not exist.
      */
     emailQueue: process.env.RABBITMQ_EMAIL_QUEUE ?? 'NOTIFIER_EMAIL_QUEUE',
+    /*
+     * The SMS twin of the queue above, on the same contract: the producer
+     * asserts, binds and dead-letters it, this service only checks it exists
+     * and consumes. Messages carry the same body POST /sms/send takes.
+     */
+    smsQueue: process.env.RABBITMQ_SMS_QUEUE ?? 'NOTIFIER_SMS_QUEUE',
     // Caps how many messages are in flight before acks catch up.
     prefetch: parseInt(process.env.RABBITMQ_PREFETCH ?? '10', 10),
   },
