@@ -83,6 +83,12 @@ export class SmsConsumerService implements OnModuleInit, OnApplicationShutdown {
         });
       },
     });
+    // Without a listener, a failed setup (e.g. the queue not existing yet) is
+    // an unhandled 'error' event and takes the whole process down. Logged
+    // instead: the setup re-runs on the next reconnect.
+    this.channel.on('error', (err: Error) =>
+      this.logger.error(`Could not consume "${smsQueue}": ${err.message}`),
+    );
   }
 
   async onApplicationShutdown(): Promise<void> {
