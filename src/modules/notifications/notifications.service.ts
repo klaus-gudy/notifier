@@ -54,6 +54,25 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * Audits a request refused before any provider was contacted, e.g. a queue
+   * payload that failed validation. The values were never validated, so they
+   * are clipped to fit their columns rather than failing the insert.
+   */
+  recordRejected(
+    input: CreateNotificationInput & { errorMessage: string },
+  ): Promise<Notification> {
+    return this.notifications.save(
+      this.notifications.create({
+        ...input,
+        serviceName: input.serviceName.slice(0, 100),
+        recipient: input.recipient.slice(0, 320),
+        status: NotificationStatus.FAILED,
+        retryCount: 0,
+      }),
+    );
+  }
+
   /** Paginated audit search, newest first. */
   async findAll(query: QueryNotificationsDto): Promise<{
     items: Notification[];

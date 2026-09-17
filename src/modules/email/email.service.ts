@@ -1,9 +1,10 @@
-import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import { AppConfig } from '../../config/configuration';
 import { NotificationChannel } from '../notifications/enums/notification-channel.enum';
 import { NotificationStatus } from '../notifications/enums/notification-status.enum';
+import { NotificationSendError } from '../notifications/notification-send.error';
 import { Notification } from '../notifications/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SendEmailDto } from './dto/send-email.dto';
@@ -51,8 +52,30 @@ export class EmailService {
       message: dto.content,
     });
 
+    this.logger.log(
+      `Queued ${notification.id} (${dto.service_name} -> ${maskEmail(dto.email)})`,
+    );
+
+    return this.deliver(notification, dto, 0);
+  }
+
+  /**
+   * Sends a failed notification again into its existing audit row, so a retry
+   * shows up as a higher retry_count rather than as a second record. Takes the
+   * DTO because the subject is not a column of its own.
+   */
+  async retry(id: string, dto: SendEmailDto): Promise<Notification> {
+    const notification = await this.notifications.findOne(id);
+
+    return this.deliver(notification, dto, notification.retryCount + 1);
+  }
+
+  private async deliver(
+    notification: Notification,
+    dto: SendEmailDto,
+    retryCount: number,
+  ): Promise<Notification> {
     const target = `${dto.service_name} -> ${maskEmail(dto.email)}`;
-    this.logger.log(`Queued ${notification.id} (${target})`);
 
     // The body is already persisted as the notification message, so it is not
     // duplicated into the stored payload. Credentials are never stored here.
@@ -93,16 +116,15 @@ export class EmailService {
       providerMessageId: emailId,
       providerRequestPayload: requestPayload,
       providerResponsePayload: emailId ? { id: emailId } : null,
-      retryCount: 0,
+      retryCount,
       errorMessage: failure,
     });
 
     if (failure) {
       this.logger.error(`Failed ${recorded.id} (${target}): ${failure}`);
 
-      throw new BadGatewayException({
+      throw new NotificationSendError(recorded.id, {
         message: 'Failed to deliver the email to the provider',
-        notification_id: recorded.id,
         status: recorded.status,
         error: failure,
       });

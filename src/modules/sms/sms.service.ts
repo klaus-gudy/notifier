@@ -1,7 +1,8 @@
-import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationChannel } from '../notifications/enums/notification-channel.enum';
 import { NotificationStatus } from '../notifications/enums/notification-status.enum';
+import { NotificationSendError } from '../notifications/notification-send.error';
 import { Notification } from '../notifications/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsDispatchService } from './dispatch/sms-dispatch.service';
@@ -46,6 +47,23 @@ export class SmsService {
       `Queued ${notification.id} (${dto.service_name} -> ${maskRecipient(notification.recipient)})`,
     );
 
+    return this.deliver(notification, 0);
+  }
+
+  /**
+   * Dispatches a failed notification again into its existing audit row, so a
+   * retry shows up as a higher retry_count rather than as a second record.
+   */
+  async retry(id: string): Promise<Notification> {
+    const notification = await this.notifications.findOne(id);
+
+    return this.deliver(notification, notification.retryCount + 1);
+  }
+
+  private async deliver(
+    notification: Notification,
+    priorAttempts: number,
+  ): Promise<Notification> {
     const maxAttempts = Math.max(
       1,
       this.config.get<number>('notify.maxAttempts') ?? 1,
@@ -76,12 +94,12 @@ export class SmsService {
       providerMessageId: result.providerMessageId,
       providerRequestPayload: result.requestPayload,
       providerResponsePayload: result.responsePayload,
-      // Attempts beyond the first are retries.
-      retryCount: attempt - 1,
+      // Attempts beyond the first are retries, across every delivery pass.
+      retryCount: priorAttempts + attempt - 1,
       errorMessage: result.errorMessage,
     });
 
-    const target = `${dto.service_name} -> ${maskRecipient(recorded.recipient)}`;
+    const target = `${recorded.serviceName} -> ${maskRecipient(recorded.recipient)}`;
 
     if (result.success) {
       this.logger.log(
@@ -95,9 +113,8 @@ export class SmsService {
     }
 
     if (!result.success) {
-      throw new BadGatewayException({
+      throw new NotificationSendError(recorded.id, {
         message: 'Failed to deliver the SMS to the provider',
-        notification_id: recorded.id,
         status: recorded.status,
         retry_count: recorded.retryCount,
         error: recorded.errorMessage,

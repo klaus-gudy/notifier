@@ -13,7 +13,11 @@ import {
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { readStringFields } from '../../common/utils/queue-payload';
 import { AppConfig } from '../../config/configuration';
+import { NotificationChannel } from '../notifications/enums/notification-channel.enum';
+import { NotificationSendError } from '../notifications/notification-send.error';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SendSmsDto } from './dto/send-sms.dto';
 import { SmsService } from './sms.service';
 
@@ -23,14 +27,17 @@ import { SmsService } from './sms.service';
  * exactly like a posted one — same DTO, same validation, same retry policy.
  *
  * Acknowledgement policy, given the queue is dead-lettered by its producer:
- *  - unparseable or invalid payload -> dead-letter immediately, since a retry
- *    can never make it valid;
- *  - send failure -> one requeue, then dead-letter, so a transient provider
- *    blip recovers without a poison message looping forever.
- * The audit row is written either way, so nothing is lost to the DLQ. Note a
- * requeue replays the whole send: SmsService has already burned its own
- * NOTIFY_MAX_ATTEMPTS by this point, and the replay opens a second audit row
- * rather than updating the first.
+ *  - unparseable or invalid payload -> audited as FAILED, then dead-lettered
+ *    immediately, since a retry can never make it valid;
+ *  - send failure -> retried once in-process into the same audit row, then
+ *    dead-lettered, so a transient provider blip recovers without a poison
+ *    message looping forever. Retried here rather than requeued: a requeued
+ *    message has no memory of its audit row, so the replay would open a
+ *    second one.
+ * Both paths leave an audit row, so nothing is lost to the DLQ.
+ *
+ * The retry replays SmsService's own NOTIFY_MAX_ATTEMPTS loop, and its
+ * attempts add to the same row's retry_count.
  *
  * Its own connection, separate from the email consumer's, so either channel
  * can be retuned or fail without disturbing the other.
@@ -43,6 +50,7 @@ export class SmsConsumerService implements OnModuleInit, OnApplicationShutdown {
 
   constructor(
     private readonly smsService: SmsService,
+    private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -96,9 +104,10 @@ export class SmsConsumerService implements OnModuleInit, OnApplicationShutdown {
     try {
       dto = await this.parse(message);
     } catch (error) {
-      this.logger.error(
-        `Dead-lettering "${routingKey}": ${this.describe(error)}`,
-      );
+      const reason = this.describe(error);
+
+      this.logger.error(`Dead-lettering "${routingKey}": ${reason}`);
+      await this.recordRejected(message, reason);
       this.channel.nack(message, false, false);
       return;
     }
@@ -110,15 +119,80 @@ export class SmsConsumerService implements OnModuleInit, OnApplicationShutdown {
         `Handled "${routingKey}" -> notification ${notification.id}`,
       );
     } catch (error) {
-      // SmsService has already audited this as FAILED and logged the id.
+      await this.retryOrDeadLetter(message, error);
+    }
+  }
+
+  private async retryOrDeadLetter(
+    message: ConsumeMessage,
+    error: unknown,
+  ): Promise<void> {
+    const { routingKey } = message.fields;
+
+    if (!(error instanceof NotificationSendError)) {
+      // Failed before the outcome could be audited, e.g. the database is
+      // unreachable. There is no failed row to retry into, so fall back to a
+      // single requeue.
       const requeue = !message.fields.redelivered;
 
       this.logger.error(
         `Send failed for "${routingKey}" (${this.describe(error)}); ` +
           (requeue ? 'requeueing once' : 'dead-lettering'),
       );
+      this.channel?.nack(message, false, requeue);
+      return;
+    }
 
-      this.channel.nack(message, false, requeue);
+    // SmsService has already audited this as FAILED and logged the id.
+    this.logger.warn(
+      `Send failed for "${routingKey}" (${this.describe(error)}); ` +
+        `retrying notification ${error.notificationId} once`,
+    );
+
+    try {
+      const notification = await this.smsService.retry(error.notificationId);
+      this.channel?.ack(message);
+      this.logger.log(
+        `Handled "${routingKey}" -> notification ${notification.id} on retry`,
+      );
+    } catch (retryError) {
+      this.logger.error(
+        `Retry failed for "${routingKey}" (${this.describe(retryError)}); ` +
+          `dead-lettering notification ${error.notificationId}`,
+      );
+      this.channel?.nack(message, false, false);
+    }
+  }
+
+  /**
+   * Audits a payload that never reached SmsService, keeping whatever fields
+   * survived so the rejection can be traced back to its caller. A failed
+   * insert is only logged: the message still reaches the DLQ.
+   */
+  private async recordRejected(
+    message: ConsumeMessage,
+    reason: string,
+  ): Promise<void> {
+    const body = message.content.toString('utf8');
+    const fields = readStringFields(body);
+
+    try {
+      const notification = await this.notifications.recordRejected({
+        serviceName: fields.service_name ?? 'unknown',
+        channel: NotificationChannel.SMS,
+        recipient: fields.phone_number ?? '',
+        // The raw payload stands in when there is no body to keep.
+        message: fields.message ?? body,
+        errorMessage: `Rejected queue payload: ${reason}`,
+      });
+
+      this.logger.warn(
+        `Audited rejected "${message.fields.routingKey}" as notification ${notification.id}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not audit rejected "${message.fields.routingKey}": ${this.describe(error)}`,
+      );
     }
   }
 

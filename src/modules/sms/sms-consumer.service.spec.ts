@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { ConsumeMessage } from 'amqplib';
 import { AppConfig } from '../../config/configuration';
+import { NotificationChannel } from '../notifications/enums/notification-channel.enum';
+import { NotificationSendError } from '../notifications/notification-send.error';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SendSmsDto } from './dto/send-sms.dto';
 import { SmsConsumerService } from './sms-consumer.service';
 import { SmsService } from './sms.service';
@@ -44,6 +47,8 @@ const delivery = (body: unknown, redelivered = false): ConsumeMessage =>
 describe('SmsConsumerService', () => {
   let service: SmsConsumerService;
   let send: jest.Mock;
+  let retry: jest.Mock;
+  let recordRejected: jest.Mock;
   let ack: jest.Mock;
   let nack: jest.Mock;
 
@@ -57,13 +62,16 @@ describe('SmsConsumerService', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
     send = jest.fn().mockResolvedValue({ id: 'notification-1' });
+    retry = jest.fn().mockResolvedValue({ id: 'notification-1' });
+    recordRejected = jest.fn().mockResolvedValue({ id: 'rejected-1' });
     ack = jest.fn();
     nack = jest.fn();
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         SmsConsumerService,
-        { provide: SmsService, useValue: { send } },
+        { provide: SmsService, useValue: { send, retry } },
+        { provide: NotificationsService, useValue: { recordRejected } },
         { provide: ConfigService, useValue: { getOrThrow: () => rabbitmq } },
       ],
     }).compile();
@@ -80,6 +88,7 @@ describe('SmsConsumerService', () => {
     } as unknown as ConfigService;
     const disabled = new SmsConsumerService(
       { send } as unknown as SmsService,
+      { recordRejected } as unknown as NotificationsService,
       moduleRef,
     );
 
@@ -125,24 +134,86 @@ describe('SmsConsumerService', () => {
       'a missing message',
       { phone_number: valid.phone_number, service_name: 'Jarvis' },
     ],
-  ])('dead-letters %s without dispatching', async (_label, body) => {
+  ])('audits and dead-letters %s without dispatching', async (_label, body) => {
     await internals(service).handle(delivery(body));
 
     expect(send).not.toHaveBeenCalled();
+    const [audited] = recordRejected.mock.calls[0] as [
+      { channel: NotificationChannel; errorMessage: string },
+    ];
+    expect(audited.channel).toBe(NotificationChannel.SMS);
+    expect(audited.errorMessage).toContain('Rejected queue payload');
     expect(nack).toHaveBeenCalledWith(expect.anything(), false, false);
   });
 
-  it('requeues a first-delivery send failure once', async () => {
-    send.mockRejectedValue(new Error('provider unreachable'));
+  it('keeps the surviving fields of a rejected payload', async () => {
+    await internals(service).handle(delivery({ ...valid, phone_number: '12' }));
+
+    expect(recordRejected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceName: 'Jarvis',
+        recipient: '12',
+        message: valid.message,
+      }),
+    );
+  });
+
+  it('falls back to the raw body when the payload is not json', async () => {
+    await internals(service).handle(delivery('not json at all'));
+
+    expect(recordRejected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceName: 'unknown',
+        recipient: '',
+        message: 'not json at all',
+      }),
+    );
+  });
+
+  it('still dead-letters a rejection it could not audit', async () => {
+    recordRejected.mockRejectedValue(new Error('database unreachable'));
+
+    await internals(service).handle(delivery('not json at all'));
+
+    expect(nack).toHaveBeenCalledWith(expect.anything(), false, false);
+  });
+
+  const sendError = (): NotificationSendError =>
+    new NotificationSendError('notification-1', { error: 'provider down' });
+
+  it('retries a send failure once into the same audit row, then acks', async () => {
+    send.mockRejectedValue(sendError());
 
     await internals(service).handle(delivery(valid));
 
-    expect(nack).toHaveBeenCalledWith(expect.anything(), false, true);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(retry).toHaveBeenCalledWith('notification-1');
+    expect(ack).toHaveBeenCalledTimes(1);
+    expect(nack).not.toHaveBeenCalled();
+  });
+
+  it('dead-letters without requeueing when the retry also fails', async () => {
+    send.mockRejectedValue(sendError());
+    retry.mockRejectedValue(sendError());
+
+    await internals(service).handle(delivery(valid));
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(nack).toHaveBeenCalledWith(expect.anything(), false, false);
     expect(ack).not.toHaveBeenCalled();
   });
 
-  it('dead-letters a send failure that has already been redelivered', async () => {
-    send.mockRejectedValue(new Error('provider unreachable'));
+  it('requeues once a failure that never reached the audit trail', async () => {
+    send.mockRejectedValue(new Error('database unreachable'));
+
+    await internals(service).handle(delivery(valid));
+
+    expect(retry).not.toHaveBeenCalled();
+    expect(nack).toHaveBeenCalledWith(expect.anything(), false, true);
+  });
+
+  it('dead-letters an unaudited failure that has already been redelivered', async () => {
+    send.mockRejectedValue(new Error('database unreachable'));
 
     await internals(service).handle(delivery(valid, true));
 
